@@ -1,0 +1,425 @@
+import { parseFrontmatter } from "./skillFrontmatter";
+import { Collapse } from "antd";
+import { useAutoSave } from "@/hooks/useAutoSave";
+import { SettingsDrawer as Drawer } from "@/components/interaction/SettingsDrawer";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Form, Input, Button, Select, Switch } from "@agentscope-ai/design";
+import { useAppMessage } from "../../../../hooks/useAppMessage";
+import { useTranslation } from "react-i18next";
+import { Zap as ThunderboltOutlined, Ban as StopOutlined } from "lucide-react";
+import type { FormInstance } from "antd";
+import type { SkillDetail } from "../../../../api/types";
+import { MarkdownCopy } from "../../../../components/MarkdownCopy/MarkdownCopy";
+import { SkillConfigEditor } from "../../../../components/SkillConfigEditor";
+import { api } from "../../../../api";
+import {
+  deriveInstalledFromLabel,
+  normalizeSkillChannels,
+} from "../../../../utils/skill";
+import {
+  SkillChannelSelect,
+  type SkillChannelOptions,
+} from "./SkillChannelSelect";
+
+export const MAX_TAGS = 8;
+export const MAX_TAG_LENGTH = 16;
+
+export interface SkillDrawerFormValues {
+  name: string;
+  description?: string;
+  content: string;
+  enabled?: boolean;
+  channels?: string[];
+  preload?: boolean;
+  tags?: string[];
+  source?: string;
+  config?: Record<string, unknown>;
+}
+
+interface SkillDrawerProps {
+  channelOptions: SkillChannelOptions;
+  open: boolean;
+  editing: boolean;
+  editingName?: string;
+  loading?: boolean;
+  editingSkill: SkillDetail | null;
+  form: FormInstance<SkillDrawerFormValues>;
+  availableTags?: string[];
+  onClose: () => void;
+  onSubmit: (values: SkillDetail) => void | boolean | Promise<void | boolean>;
+  onContentChange?: (content: string) => void;
+}
+
+export function SkillDrawer({
+  channelOptions,
+  open,
+  editing,
+  editingName = "",
+  loading = false,
+  editingSkill,
+  form,
+  availableTags = [],
+  onClose,
+  onSubmit,
+  onContentChange,
+}: SkillDrawerProps) {
+  const { t, i18n } = useTranslation();
+  const [showMarkdown, setShowMarkdown] = useState(true);
+  const [contentValue, setContentValue] = useState("");
+  const [optimizing, setOptimizing] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const [configText, setConfigText] = useState("{}");
+  const [configError, setConfigError] = useState("");
+  const [metadataOpen, setMetadataOpen] = useState(false);
+  const { message } = useAppMessage();
+
+  const validateFrontmatter = useCallback(
+    (_: unknown, value: string) => {
+      const content = contentValue || value;
+      if (!content || !content.trim()) {
+        return Promise.reject(new Error(t("skills.pleaseInputContent")));
+      }
+      const fm = parseFrontmatter(content);
+      if (!fm) {
+        return Promise.reject(new Error(t("skills.frontmatterRequired")));
+      }
+      if (!fm.name) {
+        return Promise.reject(new Error(t("skills.frontmatterNameRequired")));
+      }
+      if (!fm.description) {
+        return Promise.reject(
+          new Error(t("skills.frontmatterDescriptionRequired")),
+        );
+      }
+      return Promise.resolve();
+    },
+    [contentValue, t],
+  );
+
+  useEffect(() => {
+    if (editing && editingSkill) {
+      const channels = normalizeSkillChannels(editingSkill.channels);
+      setContentValue(editingSkill.content);
+      setConfigText(JSON.stringify(editingSkill.config || {}, null, 2));
+      form.setFieldsValue({
+        name: editingSkill.name,
+        content: editingSkill.content,
+        channels,
+        preload: editingSkill.preload ?? false,
+        tags: editingSkill.tags || [],
+        source: editingSkill.source,
+      });
+      setConfigError("");
+    } else if (!editing) {
+      setContentValue("");
+      setConfigText("{}");
+      setConfigError("");
+      form.resetFields();
+    }
+  }, [editing, editingSkill, form]);
+
+  const handleSubmit = async (values: SkillDrawerFormValues) => {
+    let parsedConfig: Record<string, unknown> | undefined;
+    const trimmed = configText.trim();
+    if (!trimmed) {
+      parsedConfig = {};
+    } else {
+      try {
+        parsedConfig = JSON.parse(trimmed);
+        setConfigError("");
+      } catch {
+        setConfigError(t("skills.configInvalidJson"));
+        setMetadataOpen(true);
+        return false;
+      }
+    }
+    return await onSubmit({
+      ...editingSkill,
+      ...values,
+      content: contentValue || values.content,
+      source: editingSkill?.source || "",
+      config: parsedConfig,
+    });
+  };
+
+  const { schedule, flush } = useAutoSave(async () => {
+    if (!editing || loading) return false;
+    let values: SkillDrawerFormValues;
+    try {
+      values = await form.validateFields();
+    } catch {
+      setMetadataOpen(true);
+      return false;
+    }
+    return await handleSubmit(values);
+  });
+  const closeEditor = async () => {
+    if (!editing || (await flush())) onClose();
+  };
+
+  const handleContentChange = (content: string) => {
+    setContentValue(content);
+    form.setFieldsValue({ content });
+    if (editing) schedule();
+    form.validateFields(["content"]).catch(() => {});
+    if (onContentChange) {
+      onContentChange(content);
+    }
+  };
+
+  const handleOptimize = async () => {
+    if (!contentValue.trim()) {
+      message.warning(t("skills.noContentToOptimize"));
+      return;
+    }
+
+    setOptimizing(true);
+    abortControllerRef.current = new AbortController();
+    const originalContent = contentValue;
+    setContentValue(""); // Clear content for streaming output
+
+    try {
+      await api.streamOptimizeSkill(
+        originalContent,
+        (textChunk) => {
+          setContentValue((prev) => {
+            const newContent = prev + textChunk;
+            form.setFieldsValue({ content: newContent });
+            return newContent;
+          });
+        },
+        abortControllerRef.current.signal,
+        i18n.language, // Pass current language to API
+      );
+      message.success(t("skills.optimizeSuccess"));
+    } catch (error: unknown) {
+      const aborted =
+        error instanceof DOMException && error.name === "AbortError";
+      if (!aborted) {
+        message.error(
+          error instanceof Error ? error.message : t("skills.optimizeFailed"),
+        );
+      }
+    } finally {
+      setOptimizing(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  const handleStopOptimize = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setOptimizing(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  const drawerFooter = !editing ? (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        width: "100%",
+      }}
+    >
+      <div>
+        {!optimizing ? (
+          <Button
+            type="default"
+            icon={<ThunderboltOutlined size="1em" />}
+            onClick={handleOptimize}
+            disabled={!contentValue.trim()}
+          >
+            {t("skills.optimizeWithAI")}
+          </Button>
+        ) : (
+          <Button
+            type="default"
+            danger
+            icon={<StopOutlined size="1em" />}
+            onClick={handleStopOptimize}
+          >
+            {t("skills.stopOptimize")}
+          </Button>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Button onClick={onClose}>{t("common.cancel")}</Button>
+        <Button type="primary" onClick={() => form.submit()}>
+          {t("skills.create")}
+        </Button>
+      </div>
+    </div>
+  ) : null;
+
+  return (
+    <Drawer
+      width={520}
+      placement="right"
+      title={
+        editing
+          ? `${t("skills.viewSkill")}${editingName ? `: ${editingName}` : ""}`
+          : t("skills.createSkill")
+      }
+      open={open}
+      onClose={() => void closeEditor()}
+      destroyOnHidden
+      footer={drawerFooter}
+    >
+      {loading ? (
+        <div style={{ padding: 24, textAlign: "center" }}>
+          {t("common.loading")}
+        </div>
+      ) : (
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSubmit}
+          onValuesChange={() => {
+            if (editing) schedule();
+          }}
+          onFinishFailed={() => setMetadataOpen(true)}
+        >
+          {!editing ? (
+            <Form.Item
+              name="name"
+              label={t("skills.name")}
+              rules={[{ required: true, message: t("skills.pleaseInputName") }]}
+            >
+              <Input placeholder={t("skills.skillNamePlaceholder")} />
+            </Form.Item>
+          ) : (
+            <Form.Item name="name" label={t("skills.name")}>
+              <Input />
+            </Form.Item>
+          )}
+
+          <Form.Item
+            name="content"
+            label={t("skills.skillContent")}
+            rules={[{ required: true, validator: validateFrontmatter }]}
+          >
+            <MarkdownCopy
+              content={contentValue}
+              showMarkdown={showMarkdown}
+              onShowMarkdownChange={setShowMarkdown}
+              editable={true}
+              onContentChange={handleContentChange}
+              textareaProps={{
+                ...(!editing && {
+                  placeholder: t("skills.contentPlaceholder"),
+                }),
+                rows: 12,
+              }}
+            />
+          </Form.Item>
+
+          <Collapse
+            ghost
+            activeKey={metadataOpen ? ["metadata"] : []}
+            onChange={(keys) => setMetadataOpen(keys.includes("metadata"))}
+            items={[
+              {
+                key: "metadata",
+                label: t("skills.settingsDetails", "Skill settings & metadata"),
+                forceRender: true,
+                children: (
+                  <>
+                    {" "}
+                    <Form.Item
+                      name="channels"
+                      label={t("skills.channels")}
+                      initialValue={["all"]}
+                      tooltip={t("skills.allChannelsHint")}
+                      rules={[
+                        {
+                          required: true,
+                          type: "array",
+                          min: 1,
+                          message: t("skills.selectChannels"),
+                        },
+                      ]}
+                    >
+                      <SkillChannelSelect {...channelOptions} />
+                    </Form.Item>
+                    <Form.Item
+                      name="preload"
+                      label={t("skills.preload")}
+                      valuePropName="checked"
+                      initialValue={false}
+                      tooltip={t("skills.preloadHint")}
+                    >
+                      <Switch />
+                    </Form.Item>
+                    <Form.Item
+                      name="tags"
+                      label={t("skillPool.tags")}
+                      rules={[
+                        {
+                          validator: (_, value: string[] | undefined) => {
+                            const bad = (value || []).find(
+                              (v) => v.length > MAX_TAG_LENGTH,
+                            );
+                            if (bad)
+                              return Promise.reject(
+                                t("skillPool.tagTooLong", {
+                                  max: MAX_TAG_LENGTH,
+                                }),
+                              );
+                            return Promise.resolve();
+                          },
+                        },
+                      ]}
+                    >
+                      <Select
+                        mode="tags"
+                        options={availableTags.map((tag) => ({
+                          label: tag,
+                          value: tag,
+                        }))}
+                        placeholder={t("skillPool.tagsPlaceholder")}
+                        maxCount={MAX_TAGS}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      label={t("skills.config")}
+                      validateStatus={configError ? "error" : undefined}
+                      help={configError || undefined}
+                    >
+                      <SkillConfigEditor
+                        value={configText}
+                        onChange={(value) => {
+                          setConfigText(value);
+                          setConfigError("");
+                          if (editing) schedule();
+                        }}
+                        requirements={
+                          editing ? editingSkill?.requirements : undefined
+                        }
+                      />
+                    </Form.Item>
+                    {editing && editingSkill && (
+                      <>
+                        <Form.Item name="source" label={t("skills.type")}>
+                          <Input disabled />
+                        </Form.Item>
+                        <Form.Item label={t("skills.installedFrom")}>
+                          <Input
+                            disabled
+                            value={deriveInstalledFromLabel(
+                              editingSkill.installed_from,
+                            )}
+                          />
+                        </Form.Item>
+                      </>
+                    )}
+                  </>
+                ),
+              },
+            ]}
+          />
+        </Form>
+      )}
+    </Drawer>
+  );
+}

@@ -1,0 +1,57 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.scope {
+  border: 1px solid var(--app-border-subtle);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.scopeItem {
+  padding: 14px 16px;
+  & + & {
+    border-top: 1px solid var(--app-border-subtle);
+  }
+}
+.choiceRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  > svg {
+    color: var(--app-text-secondary);
+    flex-shrink: 0;
+  }
+  :global(.ant-checkbox-wrapper),
+  :global(.qwenpaw-checkbox-wrapper) {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+  }
+}
+.choiceLabel {
+  flex: 1;
+  font-size: 13px;
+}
+.count {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.choiceRow .included {
+  color: var(--app-accent-text);
+}
+.agentSelect {
+  overflow: hidden;
+  > div {
+    padding-top: 12px;
+  }
+}
+.secretsHint {
+  margin: 6px 0 0 27px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
+}
