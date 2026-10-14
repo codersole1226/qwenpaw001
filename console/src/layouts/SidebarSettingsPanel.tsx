@@ -1,4 +1,5 @@
 import { Popover, message } from "antd";
+
 import {
   BookOpen,
   Github,
@@ -59,6 +60,8 @@ import {
   getFaqUrl,
   getReleaseNotesUrl,
 } from "./constants";
+import { useDisplayMode } from "../contexts/DisplayModeContext";
+
 import styles from "./sidebarSettingsPanel.module.less";
 import LocalAvatarPicker from "./LocalAvatarPicker";
 
@@ -201,6 +204,7 @@ export default function SidebarSettingsPanel({
   onOpenAccount,
   onLogout,
 }: SidebarSettingsPanelProps) {
+  const { isEmbedded } = useDisplayMode();
   const { t, i18n } = useTranslation();
   const { themeMode, setThemeMode } = useTheme();
   const [wideMode, setWideMode] = useState(getChatWideModePreference);
@@ -372,14 +376,25 @@ export default function SidebarSettingsPanel({
         label={t("sidebar.settings.theme", "Theme")}
         content={themeChoices}
       />
-      <button
-        type="button"
-        className={styles.menuItem}
-        onClick={() => finishAction(onOpenDesktopMode)}
-      >
-        <Monitor size={16} />
-        <span>{t("sidebar.settings.desktopMode", "Desktop mode")}</span>
-      </button>
+      {!isEmbedded && (
+
+  <button
+
+    type="button"
+
+    className={styles.menuItem}
+
+    onClick={() => finishAction(onOpenDesktopMode)}
+
+  >
+
+    <Monitor size={16} />
+
+    <span>{t("sidebar.settings.desktopMode", "Desktop mode")}</span>
+
+  </button>
+
+)}
     </div>
   );
 
@@ -417,18 +432,26 @@ export default function SidebarSettingsPanel({
   );
 
   return (
-    <div className={styles.panel}>
-      <LocalAvatarPicker />
-      <FlyoutItem
-        icon={<Palette size={16} />}
-        label={t("sidebar.quickMenu.appearance", "Appearance")}
-        content={appearanceContent}
-      />
-      <FlyoutItem
-        icon={<MessageSquareText size={16} />}
-        label={t("settingsCenter.chatDisplay", "Message display")}
-        content={messageDisplayContent}
-      />
+  <div className={styles.panel}>
+    {/* 头像：保留 */}
+    <LocalAvatarPicker />
+
+    {/* 外观：保留 */}
+    <FlyoutItem
+      icon={<Palette size={16} />}
+      label={t("sidebar.quickMenu.appearance", "Appearance")}
+      content={appearanceContent}
+    />
+
+    {/* 消息显示：保留 */}
+    <FlyoutItem
+      icon={<MessageSquareText size={16} />}
+      label={t("settingsCenter.chatDisplay", "Message display")}
+      content={messageDisplayContent}
+    />
+
+    {/* 完整设置中心：仅独立模式显示 */}
+    {!isEmbedded && (
       <button
         type="button"
         className={styles.menuItem}
@@ -437,82 +460,109 @@ export default function SidebarSettingsPanel({
         <Settings size={16} />
         <span>{t("sidebar.quickMenu.settings", "Settings")}</span>
       </button>
+    )}
 
-      <div className={styles.divider} />
+    {/* 以下为产品相关功能，仅独立模式显示 */}
+    {!isEmbedded && (
+      <>
+        <div className={styles.divider} />
 
-      <button
-        type="button"
-        className={styles.menuItem}
-        onClick={() => openLink(getDocsUrl(i18n.language))}
-      >
-        <BookOpen size={16} />
-        <span>{t("header.tutorial", "Tutorial")}</span>
-      </button>
-      <button
-        type="button"
-        className={styles.menuItem}
-        onClick={() => openLink(getReleaseNotesUrl(i18n.language))}
-      >
-        <FileText size={16} />
-        <span>{t("header.changelog", "Changelog")}</span>
-      </button>
-      <button
-        type="button"
-        className={styles.menuItem}
-        onClick={() => openLink(getFaqUrl(i18n.language))}
-      >
-        <CircleHelp size={16} />
-        <span>{t("header.faq", "FAQ")}</span>
-      </button>
-      <button
-        type="button"
-        className={styles.menuItem}
-        onClick={() => openLink(getFeatureDemosUrl(i18n.language))}
-      >
-        <CirclePlay size={16} />
-        <span>{t("header.featureDemos")}</span>
-      </button>
-      <button
-        type="button"
-        className={styles.menuItem}
-        onClick={() => openLink(GITHUB_URL)}
-      >
-        <Github size={16} />
-        <span>{t("header.github")}</span>
-      </button>
-      <div className={styles.divider} />
+        <button
+          type="button"
+          className={styles.menuItem}
+          onClick={() => openLink(getDocsUrl(i18n.language))}
+        >
+          <BookOpen size={16} />
+          <span>{t("header.tutorial", "Tutorial")}</span>
+        </button>
 
-      <button
-        type="button"
-        className={styles.menuItem}
-        onClick={() => openLink(QWENPAW_WEBSITE_URL)}
-      >
-        <Info size={16} />
-        <span>{t("sidebar.quickMenu.about", "About QwenPaw")}</span>
-        {version && <span className={styles.menuMeta}>v{version}</span>}
-      </button>
+        <button
+          type="button"
+          className={styles.menuItem}
+          onClick={() => openLink(getReleaseNotesUrl(i18n.language))}
+        >
+          <FileText size={16} />
+          <span>{t("header.changelog", "Changelog")}</span>
+        </button>
 
-      {authEnabled && (
-        <>
-          <div className={styles.divider} />
-          <button
-            type="button"
-            className={styles.menuItem}
-            onClick={() => onOpenAccount && finishAction(onOpenAccount)}
-          >
-            <UserRound size={16} />
-            <span>{t("account.title", "Account")}</span>
-          </button>
-          <button
-            type="button"
-            className={`${styles.menuItem} ${styles.dangerItem}`}
-            onClick={() => onLogout && finishAction(onLogout)}
-          >
-            <LogOut size={16} />
-            <span>{t("login.logout", "Logout")}</span>
-          </button>
-        </>
-      )}
-    </div>
-  );
+        <button
+          type="button"
+          className={styles.menuItem}
+          onClick={() => openLink(getFaqUrl(i18n.language))}
+        >
+          <CircleHelp size={16} />
+          <span>{t("header.faq", "FAQ")}</span>
+        </button>
+
+        <button
+          type="button"
+          className={styles.menuItem}
+          onClick={() => openLink(getFeatureDemosUrl(i18n.language))}
+        >
+          <CirclePlay size={16} />
+          <span>{t("header.featureDemos")}</span>
+        </button>
+
+        <button
+          type="button"
+          className={styles.menuItem}
+          onClick={() => openLink(GITHUB_URL)}
+        >
+          <Github size={16} />
+          <span>{t("header.github")}</span>
+        </button>
+
+        <div className={styles.divider} />
+
+        <button
+          type="button"
+          className={styles.menuItem}
+          onClick={() => openLink(QWENPAW_WEBSITE_URL)}
+        >
+          <Info size={16} />
+          <span>{t("sidebar.quickMenu.about", "About QwenPaw")}</span>
+          {version && (
+            <span className={styles.menuMeta}>v{version}</span>
+          )}
+        </button>
+      </>
+    )}
+
+    {/* 账户管理：仅独立模式显示 */}
+    {authEnabled && !isEmbedded && (
+      <>
+        <div className={styles.divider} />
+
+        <button
+          type="button"
+          className={styles.menuItem}
+          onClick={() =>
+            onOpenAccount && finishAction(onOpenAccount)
+          }
+        >
+          <UserRound size={16} />
+          <span>{t("account.title", "Account")}</span>
+        </button>
+      </>
+    )}
+
+    {/* 退出登录：两种模式都保留 */}
+    {authEnabled && (
+      <>
+        <div className={styles.divider} />
+
+        <button
+          type="button"
+          className={`${styles.menuItem} ${styles.dangerItem}`}
+          onClick={() =>
+            onLogout && finishAction(onLogout)
+          }
+        >
+          <LogOut size={16} />
+          <span>{t("login.logout", "Logout")}</span>
+        </button>
+      </>
+    )}
+  </div>
+);
 }

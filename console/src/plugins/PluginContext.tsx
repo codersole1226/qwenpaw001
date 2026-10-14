@@ -17,6 +17,8 @@ import {
   subscribe as registrySubscribe,
 } from "./registry/store";
 
+import { installHostContextPlugin } from "../bridge/hostContextPlugin";
+
 /** Derive the legacy PluginRouteDeclaration[] shape from routeRegistry. */
 function derivePluginRoutes(): PluginRouteDeclaration[] {
   // Include both legacy (registerRoutes shim) routes and any new route.add
@@ -91,6 +93,10 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
         import("../components/Chat/ToolCards/registerBuiltinCards"),
       ]);
       installHostSdk();
+
+      // 注册馆事通页面上下文插件
+
+      installHostContextPlugin();
       registerBuiltinCards();
       return loadAllPlugins();
     };

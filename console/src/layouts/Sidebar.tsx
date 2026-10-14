@@ -1,4 +1,5 @@
 import { NotificationBell } from "@/components/interaction/NotificationBell";
+import { useDisplayMode } from "../contexts/DisplayModeContext";
 import {
   Layout,
   Button,
@@ -76,7 +77,7 @@ import { getAgentDisplayName } from "../utils/agentDisplayName";
 import { isAgentAvailableInChat } from "../utils/agentVisibility";
 
 // ── Layout ────────────────────────────────────────────────────────────────
-
+import { embeddedFeatures } from "../config/embeddedFeatures";
 const { Sider } = Layout;
 const MOBILE_SIDEBAR_QUERY = "(max-width: 768px)";
 
@@ -120,6 +121,7 @@ export default function Sidebar({
   selectedKey,
   hubMode = false,
 }: SidebarProps) {
+  const { isEmbedded } = useDisplayMode();
   const navigate = useNavigate();
   const location = useLocation();
   const { t, i18n } = useTranslation();
@@ -255,25 +257,49 @@ export default function Sidebar({
     [focusItemIdSet, hiddenPluginItemIdSet, visibleAgentMenu],
   );
   const selectedSettingsMenu = useMemo(
-    () =>
-      filterSidebarMenuItems(
-        rawSettingsMenu,
-        focusItemIdSet,
-        hiddenPluginItemIdSet,
-      ),
-    [focusItemIdSet, hiddenPluginItemIdSet, rawSettingsMenu],
-  );
+  () =>
+    isEmbedded
+      ? []
+      : filterSidebarMenuItems(
+          rawSettingsMenu,
+          focusItemIdSet,
+          hiddenPluginItemIdSet,
+        ),
+  [
+    isEmbedded,
+    focusItemIdSet,
+    hiddenPluginItemIdSet,
+    rawSettingsMenu,
+  ],
+);
 
   const selectedFlatNav = useMemo(() => {
-    const entries = [
-      ...flattenMenu(agentMenu, routes, 16),
-      ...flattenMenu(selectedSettingsMenu, routes, 16),
-    ];
-    const uniqueEntries = [
-      ...new Map(entries.map((entry) => [entry.key, entry])).values(),
-    ];
-    return orderSidebarEntries(uniqueEntries, focusItemIds);
-  }, [agentMenu, focusItemIds, routes, selectedSettingsMenu, language]);
+  const entries = [
+    ...flattenMenu(agentMenu, routes, 16),
+    ...flattenMenu(selectedSettingsMenu, routes, 16),
+  ];
+
+  const filteredEntries = isEmbedded
+    ? entries.filter((entry) =>
+        embeddedFeatures.allowedSidebarMenuIds.includes(entry.key)
+      )
+    : entries;
+
+  const uniqueEntries = [
+    ...new Map(
+      filteredEntries.map((entry) => [entry.key, entry])
+    ).values(),
+  ];
+
+  return orderSidebarEntries(uniqueEntries, focusItemIds);
+}, [
+  agentMenu,
+  focusItemIds,
+  routes,
+  selectedSettingsMenu,
+  language,
+  isEmbedded,
+]);
   // ── Effects ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -427,47 +453,56 @@ export default function Sidebar({
     setShakeInbox(false);
   }, []);
 
-  const collapsedNavItems = useMemo(() => {
-    // Inbox in collapsed mode shows a dot overlay on its icon (kept Sidebar-local
-    // for the same reason as decorateLabel: live state isn't menu data).
-    const scrollableEntries = [
-      ...flattenMenu(agentMenu, routes, 18),
-      ...flattenMenu(selectedSettingsMenu, routes, 18),
-    ];
-    const inboxEntry = scrollableEntries.find(
-      (entry) => entry.key === "core.inbox",
-    );
-    const orderedEntries = orderSidebarEntries(
-      scrollableEntries.filter((entry) => entry.key !== "core.inbox"),
-      focusItemIds,
-    );
-    const flat = [...(inboxEntry ? [inboxEntry] : []), ...orderedEntries];
-    return flat.map((entry) =>
-      entry.key === "core.inbox"
-        ? {
-            ...entry,
-            icon: (
-              <NotificationBell
-                count={unreadCount}
-                attention={hasPendingApprovals}
-                animate={wobbleEnabled}
-                ring={effectiveShake}
-              />
-            ),
-          }
-        : entry,
-    );
-  }, [
-    agentMenu,
+const collapsedNavItems = useMemo(() => {
+  const entries = [
+    ...flattenMenu(agentMenu, routes, 18),
+    ...flattenMenu(selectedSettingsMenu, routes, 18),
+  ];
+
+  const scrollableEntries = isEmbedded
+    ? entries.filter((entry) =>
+        embeddedFeatures.allowedSidebarMenuIds.includes(entry.key)
+      )
+    : entries;
+
+  const inboxEntry = scrollableEntries.find(
+    (entry) => entry.key === "core.inbox",
+  );
+
+  const orderedEntries = orderSidebarEntries(
+    scrollableEntries.filter((entry) => entry.key !== "core.inbox"),
     focusItemIds,
-    selectedSettingsMenu,
-    routes,
-    unreadCount,
-    hasPendingApprovals,
-    wobbleEnabled,
-    effectiveShake,
-    language,
-  ]);
+  );
+
+  const flat = [...(inboxEntry ? [inboxEntry] : []), ...orderedEntries];
+
+  return flat.map((entry) =>
+    entry.key === "core.inbox"
+      ? {
+          ...entry,
+          icon: (
+            <NotificationBell
+              count={unreadCount}
+              attention={hasPendingApprovals}
+              animate={wobbleEnabled}
+              ring={effectiveShake}
+            />
+          ),
+        }
+      : entry,
+  );
+}, [
+  agentMenu,
+  focusItemIds,
+  selectedSettingsMenu,
+  routes,
+  unreadCount,
+  hasPendingApprovals,
+  wobbleEnabled,
+  effectiveShake,
+  language,
+  isEmbedded,
+]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -496,13 +531,23 @@ export default function Sidebar({
     }
   }, [location.pathname, navigate]);
 
-  const handleOpenSettings = useCallback(() => {
-    navigate("/settings/general", {
-      state: {
-        settingsReturnTo: `${location.pathname}${location.search}${location.hash}`,
-      },
-    });
-  }, [location.hash, location.pathname, location.search, navigate]);
+const handleOpenSettings = useCallback(() => {
+  if (isEmbedded) {
+    return;
+  }
+
+  navigate("/settings/general", {
+    state: {
+      settingsReturnTo: `${location.pathname}${location.search}${location.hash}`,
+    },
+  });
+}, [
+  isEmbedded,
+  location.hash,
+  location.pathname,
+  location.search,
+  navigate,
+]);
 
   const handleOpenDesktopMode = useCallback(() => {
     window.location.assign(getOsRootHref(window.location.pathname));
@@ -949,18 +994,20 @@ export default function Sidebar({
                         </motion.div>
                       ))}
 
-                      <button
-                        type="button"
-                        className={skin.moreSettings}
-                        data-press
-                        aria-label={t("nav.moreSettings", "More settings")}
-                        onClick={handleOpenSettings}
-                      >
-                        <Settings size={18} />
-                        <span className={skin.navLabel}>
-                          {t("nav.moreSettings", "More settings")}
-                        </span>
-                      </button>
+                      {!isEmbedded && (
+  <button
+    type="button"
+    className={skin.moreSettings}
+    data-press
+    aria-label={t("nav.moreSettings", "More settings")}
+    onClick={handleOpenSettings}
+  >
+    <Settings size={18} />
+    <span className={skin.navLabel}>
+      {t("nav.moreSettings", "More settings")}
+    </span>
+  </button>
+)}
                     </motion.div>
                   </motion.div>
                 )}
@@ -994,7 +1041,7 @@ export default function Sidebar({
           </>
         )}
 
-        {authEnabled && hubAdmin && !collapsed && (
+        {!isEmbedded && authEnabled && hubAdmin && !collapsed && (
           <div className={styles.authActions}>
             <Button
               type="text"
@@ -1031,6 +1078,7 @@ export default function Sidebar({
                 authEnabled={authEnabled}
                 onOpenAccount={handleOpenAccount}
                 onLogout={handleLogout}
+                isEmbedded={isEmbedded}
               />
             }
           >
@@ -1068,6 +1116,7 @@ export default function Sidebar({
             </button>
           </Popover>
         </div>
+
 
         <Modal
           open={accountModalOpen}

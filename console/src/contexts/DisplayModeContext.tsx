@@ -1,7 +1,6 @@
 import {
   createContext,
   useContext,
-  useMemo,
   type ReactNode,
 } from "react";
 
@@ -14,12 +13,12 @@ const DisplayModeContext = createContext<DisplayModeContextValue>({
 });
 
 function detectEmbeddedMode(): boolean {
-  // 独立打开 QwenPaw，不限制功能
-  if (window.parent === window) {
+  // 独立访问 QwenPaw
+  if (window.self === window.top) {
     return false;
   }
 
-  // 只有携带嵌入标识的 iframe 才进入受限模式
+  // 馆事通 iframe 嵌入
   const params = new URLSearchParams(window.location.search);
 
   return params.get("displayMode") === "embedded";
@@ -30,7 +29,8 @@ export function DisplayModeProvider({
 }: {
   children: ReactNode;
 }) {
-  const isEmbedded = useMemo(() => detectEmbeddedMode(), []);
+  const isEmbedded = detectEmbeddedMode();
+  console.log("[QwenPaw] isEmbedded:", isEmbedded);
 
   return (
     <DisplayModeContext.Provider value={{ isEmbedded }}>
